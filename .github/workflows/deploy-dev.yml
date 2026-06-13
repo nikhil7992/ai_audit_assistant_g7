@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feature/**
+      - main
 
 permissions:
   contents:      write
@@ -15,7 +16,7 @@ permissions:
 env:
   ECR_REPOSITORY: nikhil7992/ai_audit_assistant_g7
   # PLACEHOLDER: replace <YOUR_GITHUB_ORG> with your GitHub organisation name
-  # Example: principalusis-emu/expense-audit
+  # Example: principalusis-emu/expense-audit 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Job 1 — Deploy ECR repository stack (us-east-1 only)
