@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "service": "expense-audit",
+  "endpoints": {
+    "health":    { "method": "GET",  "path": "/health",            "description": "Service health check" },
+    "audit": {
+      "upload":   { "method": "POST", "path": "/audit/upload",      "description": "Upload PDF/JSON expense documents and run full pipeline" },
+      "sample":   { "method": "POST", "path": "/audit/sample",      "description": "Run audit on 18 built-in synthetic expense records" },
+      "scenarios":{ "method": "GET",  "path": "/audit/scenarios",   "description": "List all synthetic test scenarios with expected outcomes" }
+    },
+    "validate":   { "method": "POST", "path": "/validate",          "description": "Validate a single expense JSON against policy" },
+    "policies": {
+      "query":    { "method": "POST", "path": "/policies/query",    "description": "Semantic k-NN search over the OpenSearch policy index" }
+    },
+    "reports": {
+      "list":     { "method": "GET",  "path": "/reports",           "description": "List all stored audit reports from S3" },
+      "get":      { "method": "GET",  "path": "/reports/{reportId}","description": "Fetch a single audit report JSON by ID" }
+    },
+    "admin": {
+      "generate_data": { "method": "POST", "path": "/admin/generate-data", "description": "Write 14 invoice PDFs+JSONs, 4 form PDFs+JSONs, and 18 OCR stubs to data/ directory" },
+      "seed":          { "method": "POST", "path": "/admin/seed-policies",  "description": "Seed 12 policy documents into OpenSearch (run once after deploy)" }
+    }
+  }
+}

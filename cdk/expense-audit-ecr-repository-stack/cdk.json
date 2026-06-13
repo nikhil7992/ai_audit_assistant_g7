@@ -1,0 +1,9 @@
+{
+  "app": "npx ts-node bin/ecr-repository-app.ts",
+  "context": {
+    "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+    "@aws-cdk/core:checkSecretUsage":            true,
+    "@aws-cdk/aws-ecs:arnFormatIncludesClusterName": true,
+    "env": "dev"
+  }
+}
