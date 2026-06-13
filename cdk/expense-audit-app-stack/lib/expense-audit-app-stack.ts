@@ -255,7 +255,11 @@ export class ExpenseAuditAppStack extends cdk.Stack {
           },
         });
         service.attachToApplicationTargetGroup(tg);
-        listener.addTargetGroups(`${name}-rule`, { targetGroups: [tg], priority: 10 });
+        listener.addTargetGroups(`${name}-rule`, {
+          targetGroups: [tg],
+          conditions: [elbv2.ListenerCondition.pathPatterns(['/*'])],
+          priority: 10,
+        });
       }
 
       return service;
