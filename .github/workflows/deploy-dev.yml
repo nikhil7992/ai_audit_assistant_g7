@@ -1,0 +1,180 @@
+name: Deploy Expense Audit to Dev
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/**
+
+permissions:
+  contents:      write
+  pull-requests: read
+  actions:       write
+  id-token:      write   # required for OIDC / STS web identity token
+
+env:
+  ECR_REPOSITORY: <YOUR_GITHUB_ORG>/expense-audit
+  # PLACEHOLDER: replace <YOUR_GITHUB_ORG> with your GitHub organisation name
+  # Example: principalusis-emu/expense-audit
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 1 — Deploy ECR repository stack (us-east-1 only)
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+  deploy-expense-audit-ecr-stack:
+    name: Deploy Expense Audit ECR Repository Stack
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Dependencies
+        working-directory: ./cdk/expense-audit-ecr-repository-stack
+        run: yarn install --frozen-lockfile
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CDK_ROLE_ARN }}
+          # PLACEHOLDER: set CDK_ROLE_ARN secret in GitHub repository settings
+          # Format: arn:aws:iam::<ACCOUNT_ID>:role/<ROLE_NAME>
+          # This role must trust github.com via OIDC (web identity) — see README.md
+          aws-region: us-east-1
+
+      - name: CDK Deploy ECR Stack
+        working-directory: ./cdk/expense-audit-ecr-repository-stack
+        run: yarn cdk deploy -c env=dev ExpenseAuditEcrRepositoryStack --require-approval never
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 2 — Build Docker image and push to ECR
+# ─────────────────────────────────────────────────────────────────────────────
+  build-and-publish:
+    name: Build and Push Image to ECR
+    runs-on: ubuntu-latest
+    needs: deploy-expense-audit-ecr-stack
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        working-directory: ./app
+        run: |
+          docker build \
+            -t expense-audit/$ECR_REPOSITORY:$GITHUB_SHA \
+            -f Dockerfile \
+            .
+
+      - name: Save Docker Image
+        run: |
+          docker save \
+            --output expense-audit-image.tar \
+            expense-audit/$ECR_REPOSITORY:$GITHUB_SHA
+
+      - name: Upload Image Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: expense-audit-image
+          path: expense-audit-image.tar
+          retention-days: 1
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CDK_ROLE_ARN }}
+          # PLACEHOLDER: same role used for CDK — ensure ecr:GetAuthorizationToken
+          #              and ecr:BatchCheckLayerAvailability permissions are included
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Tag and Push Image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker tag \
+            expense-audit/$ECR_REPOSITORY:$GITHUB_SHA \
+            $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker tag \
+            expense-audit/$ECR_REPOSITORY:$GITHUB_SHA \
+            $ECR_REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA
+          docker push --all-tags $ECR_REGISTRY/$ECR_REPOSITORY
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 3 — Deploy CDK application stack (ECS Fargate + all infra)
+# ─────────────────────────────────────────────────────────────────────────────
+  deploy-expense-audit-app-cdk:
+    name: Deploy Expense Audit App CDK Stack
+    runs-on: ubuntu-latest
+    needs: build-and-publish
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Dependencies
+        working-directory: ./cdk/expense-audit-app-stack
+        run: yarn install --frozen-lockfile
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CDK_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: CDK Deploy App Stack
+        working-directory: ./cdk/expense-audit-app-stack
+        run: |
+          yarn cdk deploy \
+            -c env=dev \
+            -c imageTag=${{ github.sha }} \
+            ExpenseAuditStack \
+            --require-approval never
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 4 — Force ECS service update (pull latest image)
+# ─────────────────────────────────────────────────────────────────────────────
+  force-update-ecs:
+    name: Force Update ECS Service
+    runs-on: ubuntu-latest
+    needs: deploy-expense-audit-app-cdk
+
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CDK_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Get ECS Cluster name
+        run: |
+          echo "ECS_CLUSTER=$(aws ecs list-clusters \
+            --query "clusterArns[?contains(@, 'ExpenseAuditCluster')]" \
+            --output text)" >> $GITHUB_ENV
+
+      - name: Get ECS Service name
+        run: |
+          echo "ECS_SERVICE=$(aws ecs list-services \
+            --cluster $ECS_CLUSTER \
+            --query "serviceArns[0]" \
+            --output text)" >> $GITHUB_ENV
+
+      - name: Force Update
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment

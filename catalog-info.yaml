@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: expense-audit
+  description: AI-powered corporate expense audit microservice platform
+  annotations:
+    github.com/project-slug: <YOUR_GITHUB_ORG>/expense-audit
+    # PLACEHOLDER: Update the GitHub org/slug above to match your repository
+spec:
+  type: service
+  lifecycle: production
+  owner: <YOUR_TEAM_NAME>
+  # PLACEHOLDER: Replace with your team name in the Backstage catalog
