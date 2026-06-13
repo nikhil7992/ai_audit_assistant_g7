@@ -14,7 +14,7 @@ permissions:
   id-token:      write   # required for OIDC / STS web identity token
 
 env:
-  ECR_REPOSITORY: nikhil7992/ai_audit_assistant_g7
+  ECR_REPOSITORY: nikhil7992/expense-audit
   # PLACEHOLDER: replace <YOUR_GITHUB_ORG> with your GitHub organisation name
   # Example: principalusis-emu/expense-audit 
 
