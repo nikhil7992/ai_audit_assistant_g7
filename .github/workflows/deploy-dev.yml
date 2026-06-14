@@ -15,6 +15,7 @@ permissions:
 
 env:
   ECR_REPOSITORY: expense-audit
+  ECR_SERVICE_REPOSITORIES: expense-audit-gateway-dev expense-audit-ocr-dev expense-audit-validation-dev expense-audit-duplicate-dev expense-audit-audit-dev
   # PLACEHOLDER: replace <YOUR_GITHUB_ORG> with your GitHub organisation name
   # Example: principalusis-emu/expense-audit 
 
@@ -101,13 +102,16 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          docker tag \
-            expense-audit/$ECR_REPOSITORY:$GITHUB_SHA \
-            $ECR_REGISTRY/$ECR_REPOSITORY:latest
-          docker tag \
-            expense-audit/$ECR_REPOSITORY:$GITHUB_SHA \
-            $ECR_REGISTRY/$ECR_REPOSITORY:$GITHUB_SHA
-          docker push --all-tags $ECR_REGISTRY/$ECR_REPOSITORY
+          for repo in $ECR_SERVICE_REPOSITORIES; do
+            docker tag \
+              expense-audit/$ECR_REPOSITORY:$GITHUB_SHA \
+              $ECR_REGISTRY/$repo:latest
+            docker tag \
+              expense-audit/$ECR_REPOSITORY:$GITHUB_SHA \
+              $ECR_REGISTRY/$repo:$GITHUB_SHA
+            docker push $ECR_REGISTRY/$repo:latest
+            docker push $ECR_REGISTRY/$repo:$GITHUB_SHA
+          done
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Job 3 — Deploy CDK application stack (ECS Fargate + all infra)
