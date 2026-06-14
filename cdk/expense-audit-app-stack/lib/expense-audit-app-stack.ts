@@ -248,17 +248,18 @@ export class ExpenseAuditAppStack extends cdk.Stack {
           port,
           targetType:      elbv2.TargetType.IP,
           healthCheck: {
-            path:                '/health',
-            interval:            cdk.Duration.seconds(30),
+            path:                   '/health',
+            interval:               cdk.Duration.seconds(30),
             healthyThresholdCount:  2,
             unhealthyThresholdCount: 3,
           },
         });
         service.attachToApplicationTargetGroup(tg);
+        // Fix: conditions are required when priority is set
         listener.addTargetGroups(`${name}-rule`, {
           targetGroups: [tg],
-          conditions: [elbv2.ListenerCondition.pathPatterns(['/*'])],
-          priority: 10,
+          priority:     10,
+          conditions:   [elbv2.ListenerCondition.pathPatterns(['/api/*', '/health', '/docs', '/redoc'])],
         });
       }
 
@@ -275,17 +276,89 @@ export class ExpenseAuditAppStack extends cdk.Stack {
       OPENSEARCH_ENDPOINT:  opensearchEndpoint,
       OPENSEARCH_INDEX:     'expense-policies',
       OPENSEARCH_USERNAME:  'admin',
-      OPENSEARCH_PASSWORD:  opensearchPassword,    // injected from SSM
+      OPENSEARCH_PASSWORD:  opensearchPassword,
       REPORTS_S3_BUCKET:    reportsBucket.bucketName,
       TEXTRACT_S3_BUCKET:   docsBucket.bucketName,
     };
 
-    // ── Deploy all five services ──────────────────────────────────────────────
-    buildService('gateway',    8000, 512,  1024, { ...commonEnv, PORT: '8000' }, true  /* behind ALB */);
+    // ── Deploy backend services ───────────────────────────────────────────────
+    buildService('gateway',    8000, 512,  1024, { ...commonEnv, PORT: '8000' }, true);
     buildService('ocr',        8001, 1024, 2048, { ...commonEnv, PORT: '8001' }, false);
     buildService('validation', 8002, 1024, 2048, { ...commonEnv, PORT: '8002' }, false);
     buildService('duplicate',  8003, 1024, 2048, { ...commonEnv, PORT: '8003' }, false);
     buildService('audit',      8004, 1024, 2048, { ...commonEnv, PORT: '8004' }, false);
+
+    // ── Frontend service (React + nginx on port 80) ───────────────────────────
+    const frontendLogGroup = new logs.LogGroup(this, 'frontend-logs', {
+      logGroupName:  `/ecs/expense-audit-${appEnv}/frontend`,
+      retention:     logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    const frontendRepo = ecr.Repository.fromRepositoryName(
+      this, 'frontend-repo',
+      `expense-audit-frontend-${appEnv}`
+    );
+
+    const frontendTaskDef = new ecs.FargateTaskDefinition(this, 'frontend-task', {
+      family:         `expense-audit-${appEnv}-frontend`,
+      cpu:            256,
+      memoryLimitMiB: 512,
+      taskRole,
+      executionRole,
+    });
+
+    frontendTaskDef.addContainer('frontend-container', {
+      image:        ecs.ContainerImage.fromEcrRepository(frontendRepo, imageTag),
+      portMappings: [{ containerPort: 80, protocol: ecs.Protocol.TCP }],
+      environment:  { APP_ENV: appEnv },
+      logging:      ecs.LogDrivers.awsLogs({ streamPrefix: 'ecs', logGroup: frontendLogGroup }),
+      healthCheck: {
+        command:     ['CMD-SHELL', 'wget -qO- http://localhost/ || exit 1'],
+        interval:    cdk.Duration.seconds(30),
+        timeout:     cdk.Duration.seconds(5),
+        retries:     3,
+        startPeriod: cdk.Duration.seconds(15),
+      },
+    });
+
+    const frontendService = new ecs.FargateService(this, 'frontend-service', {
+      serviceName:    `expense-audit-${appEnv}-frontend`,
+      cluster,
+      taskDefinition: frontendTaskDef,
+      desiredCount:   1,
+      securityGroups: [serviceSg],
+      vpcSubnets:     { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      assignPublicIp: false,
+      cloudMapOptions: {
+        name:              'frontend-service',
+        cloudMapNamespace: namespace,
+        dnsRecordType:     sd.DnsRecordType.A,
+        dnsTtl:            cdk.Duration.seconds(10),
+      },
+    });
+
+    // Frontend target group — catches all traffic not matched by the API rule (priority 20 > 10)
+    const frontendTg = new elbv2.ApplicationTargetGroup(this, 'frontend-tg', {
+      targetGroupName: `expense-audit-${appEnv}-frontend`,
+      vpc,
+      protocol:        elbv2.ApplicationProtocol.HTTP,
+      port:            80,
+      targetType:      elbv2.TargetType.IP,
+      healthCheck: {
+        path:                   '/',
+        interval:               cdk.Duration.seconds(30),
+        healthyThresholdCount:  2,
+        unhealthyThresholdCount: 3,
+      },
+    });
+    frontendService.attachToApplicationTargetGroup(frontendTg);
+    // Lower priority number = higher precedence; frontend catches remaining traffic (priority 20)
+    listener.addTargetGroups('frontend-rule', {
+      targetGroups: [frontendTg],
+      priority:     20,
+      conditions:   [elbv2.ListenerCondition.pathPatterns(['/*'])],
+    });
 
     // ── Outputs ───────────────────────────────────────────────────────────────
     new cdk.CfnOutput(this, 'AlbDnsName', {

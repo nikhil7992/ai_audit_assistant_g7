@@ -1,0 +1,10 @@
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.reportId  { font-size: 13px; color: var(--text2); }
+.verdict   { font-size: 24px; font-weight: 700; }

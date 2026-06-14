@@ -1,0 +1,21 @@
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+.resultStatus { font-size: 26px; font-weight: 700; margin-bottom: 16px; }
+.resultGrid   { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+.resultItem   { background: var(--bg3); border-radius: var(--radius); padding: 10px 12px; }
+.resultLabel  { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.resultVal    { font-size: 15px; font-weight: 600; color: var(--text); }
+
+.violation {
+  background: var(--coral-dim);
+  border: 1px solid var(--coral);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}

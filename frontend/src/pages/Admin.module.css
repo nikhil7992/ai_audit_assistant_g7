@@ -1,0 +1,31 @@
+.taskHeader {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.taskIcon  { font-size: 28px; padding-top: 2px; }
+.taskLabel { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.taskDesc  { font-size: 12px; color: var(--text2); line-height: 1.6; }
+.taskStatus{ font-size: 12px; font-weight: 600; }
+
+.output {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.5;
+}
+.outputSuccess {
+  background: var(--green-dim);
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+.outputError {
+  background: var(--coral-dim);
+  color: var(--coral);
+  border: 1px solid var(--coral);
+}

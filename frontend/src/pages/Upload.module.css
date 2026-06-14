@@ -1,0 +1,48 @@
+.dropZone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  background: var(--bg2);
+}
+.dropZone:hover, .dragging {
+  border-color: var(--blue);
+  background: var(--blue-dim);
+}
+.dropIcon { font-size: 36px; margin-bottom: 12px; }
+.dropText { font-size: 15px; color: var(--text); margin-bottom: 4px; }
+.dropSub  { font-size: 12px; color: var(--text2); }
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.fileRow:last-child { border-bottom: none; }
+.fileIcon { font-size: 16px; }
+.fileName { flex: 1; color: var(--text); font-size: 13px; word-break: break-all; }
+.fileSize { color: var(--text2); font-size: 11px; white-space: nowrap; }
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+.orSep { color: var(--text3); font-size: 13px; }
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+  margin: 0 auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
