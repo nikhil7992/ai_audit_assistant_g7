@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
 
-# Pre-create data directories so generate_all_samples() can write on first run
+# Pre-create data directories
 RUN mkdir -p data/invoices data/forms data/ocr_output data/policies && \
     chown -R appuser:appuser data/
 
@@ -17,11 +17,19 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000
 
-EXPOSE 8000
+# PORT is exposed dynamically — ECS injects the correct port per service
+# (8000=gateway, 8001=ocr, 8002=validation, 8003=duplicate, 8004=audit)
+EXPOSE ${PORT}
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
+# Health check uses $PORT so it works for every service, not just gateway
+# The start-period gives uvicorn time to fully start before checks begin
+HEALTHCHECK --interval=30s --timeout=15s --start-period=120s --retries=5 \
+    CMD python3 -c \
+        "import os, urllib.request; \
+         urllib.request.urlopen('http://localhost:' + os.environ.get('PORT','8000') + '/health')" \
+    || exit 1
 
 USER appuser
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# uvicorn binds to whatever PORT is injected by ECS at runtime
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT}"]
