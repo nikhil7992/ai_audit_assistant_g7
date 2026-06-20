@@ -29,6 +29,7 @@ export class ExpenseAuditEcrRepositoryStack extends cdk.Stack {
       'expense-audit-validation',
       'expense-audit-duplicate',
       'expense-audit-audit',
+      'expense-audit-frontend'
     ];
 
     this.repositories = {};

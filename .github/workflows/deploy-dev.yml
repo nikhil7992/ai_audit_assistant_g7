@@ -16,6 +16,7 @@ permissions:
 env:
   ECR_REPOSITORY: expense-audit
   ECR_SERVICE_REPOSITORIES: expense-audit-gateway-dev expense-audit-ocr-dev expense-audit-validation-dev expense-audit-duplicate-dev expense-audit-audit-dev
+  FRONTEND_REPOSITORY: expense-audit-frontend-dev
   # PLACEHOLDER: replace <YOUR_GITHUB_ORG> with your GitHub organisation name
   # Example: principalusis-emu/expense-audit 
 
@@ -113,13 +114,51 @@ jobs:
             docker push $ECR_REGISTRY/$repo:$GITHUB_SHA
           done
 
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Job 3 — Deploy CDK application stack (ECS Fargate + all infra)
+# Job 3 — Build and push frontend image to ECR
+# ─────────────────────────────────────────────────────────────────────────────
+  build-and-publish-frontend:
+    name: Build and Push Frontend Image to ECR
+    runs-on: ubuntu-latest
+    needs: deploy-expense-audit-ecr-stack
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.CDK_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Frontend Image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          # PLACEHOLDER: VITE_API_URL must be your ALB DNS name
+          # Set ALB_DNS_NAME in GitHub repository secrets after first CDK deploy
+          VITE_API_URL: ${{ secrets.ALB_DNS_NAME }}
+        run: |
+          docker build \
+            --build-arg VITE_API_URL=$VITE_API_URL \
+            -t $ECR_REGISTRY/$FRONTEND_REPOSITORY:latest \
+            -t $ECR_REGISTRY/$FRONTEND_REPOSITORY:$GITHUB_SHA \
+            -f frontend/Dockerfile \
+            ./frontend
+          docker push --all-tags $ECR_REGISTRY/$FRONTEND_REPOSITORY
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Job 4 — Deploy CDK application stack (ECS Fargate + all infra)
 # ─────────────────────────────────────────────────────────────────────────────
   deploy-expense-audit-app-cdk:
     name: Deploy Expense Audit App CDK Stack
     runs-on: ubuntu-latest
-    needs: build-and-publish
+    needs: [build-and-publish, build-and-publish-frontend]
 
     steps:
       - name: Checkout
@@ -150,7 +189,7 @@ jobs:
             --require-approval never
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Job 4 — Force ECS service update (pull latest image)
+# Job 5 — Force ECS service update (pull latest image)
 # ─────────────────────────────────────────────────────────────────────────────
   force-update-ecs:
     name: Force Update ECS Service
