@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import Dashboard   from './pages/Dashboard'
 import Upload      from './pages/Upload'
 import Reports     from './pages/Reports'
@@ -10,7 +10,6 @@ import Admin       from './pages/Admin'
 import styles      from './App.module.css'
 
 function Nav() {
-  const loc = useLocation()
   const links = [
     { to: '/',          label: '📊 Dashboard'     },
     { to: '/upload',    label: '📤 Upload & Audit' },
