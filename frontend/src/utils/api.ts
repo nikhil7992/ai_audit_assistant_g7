@@ -9,7 +9,10 @@
  * In production (S3/CloudFront), VITE_API_URL must be the full ALB URL.
  */
 
-const BASE = import.meta.env.VITE_API_URL || ''
+// BASE is empty — all API calls use relative URLs (e.g. /validate, /audit/sample)
+// nginx proxies them to the FastAPI gateway service at runtime via BACKEND_URL env var.
+// This means the same Docker image works in any environment without rebuilding.
+const BASE = ''
 
 async function request<T>(
   method: string,

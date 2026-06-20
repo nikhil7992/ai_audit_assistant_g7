@@ -218,9 +218,9 @@ export class ExpenseAuditAppStack extends cdk.Stack {
         healthCheck: {
           command:     ['CMD-SHELL', `python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:${port}/health')" || exit 1`],
           interval:    cdk.Duration.seconds(30),
-          timeout:     cdk.Duration.seconds(10),
-          retries:     3,
-          startPeriod: cdk.Duration.seconds(30),
+          timeout:     cdk.Duration.seconds(15),
+          retries:     5,
+          startPeriod: cdk.Duration.seconds(120),
         },
       });
 
@@ -232,6 +232,10 @@ export class ExpenseAuditAppStack extends cdk.Stack {
         securityGroups:    [serviceSg],
         vpcSubnets:        { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         assignPublicIp:    false,
+        // Roll back automatically if tasks fail health checks — stops pipeline from blocking
+        circuitBreaker:         { rollback: true },
+        // Give containers 120s to start before health checks begin
+        healthCheckGracePeriod: cdk.Duration.seconds(120),
         cloudMapOptions: {
           name:           `${name}-service`,
           cloudMapNamespace: namespace,
@@ -311,7 +315,13 @@ export class ExpenseAuditAppStack extends cdk.Stack {
     frontendTaskDef.addContainer('frontend-container', {
       image:        ecs.ContainerImage.fromEcrRepository(frontendRepo, imageTag),
       portMappings: [{ containerPort: 80, protocol: ecs.Protocol.TCP }],
-      environment:  { APP_ENV: appEnv },
+      environment:  {
+        APP_ENV:      appEnv,
+        // BACKEND_URL is the internal Cloud Map DNS of the gateway service.
+        // nginx uses this to proxy /validate, /audit/*, /reports/* etc.
+        // to the FastAPI backend without the browser ever leaving the ALB.
+        BACKEND_URL: `http://gateway-service.expense-audit-${appEnv}.local:8000`,
+      },
       logging:      ecs.LogDrivers.awsLogs({ streamPrefix: 'ecs', logGroup: frontendLogGroup }),
       healthCheck: {
         command:     ['CMD-SHELL', 'wget -qO- http://localhost/ || exit 1'],
@@ -323,13 +333,15 @@ export class ExpenseAuditAppStack extends cdk.Stack {
     });
 
     const frontendService = new ecs.FargateService(this, 'frontend-service', {
-      serviceName:    `expense-audit-${appEnv}-frontend`,
+      serviceName:            `expense-audit-${appEnv}-frontend`,
       cluster,
-      taskDefinition: frontendTaskDef,
-      desiredCount:   1,
-      securityGroups: [serviceSg],
-      vpcSubnets:     { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-      assignPublicIp: false,
+      taskDefinition:         frontendTaskDef,
+      desiredCount:           1,
+      securityGroups:         [serviceSg],
+      vpcSubnets:             { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      assignPublicIp:         false,
+      circuitBreaker:         { rollback: true },
+      healthCheckGracePeriod: cdk.Duration.seconds(60),
       cloudMapOptions: {
         name:              'frontend-service',
         cloudMapNamespace: namespace,

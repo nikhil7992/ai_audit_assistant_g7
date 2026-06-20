@@ -1,29 +1,38 @@
-# Stage 1: Build the React app
+# ── Stage 1: Build React app ──────────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files first (layer cache — only reinstalls if dependencies change)
 COPY package.json ./
 RUN npm install
 
-# Copy source code
 COPY . .
 
-# PLACEHOLDER: VITE_API_URL is injected at build time via --build-arg
-# Set ALB_DNS_NAME in GitHub secrets → passed here by the workflow
-ARG VITE_API_URL=http://localhost:8000
+# VITE_API_URL is only needed at build time if you want the JS bundle to
+# call the backend directly. With the nginx proxy approach we use here,
+# the JS always calls relative URLs (/validate, /audit/sample etc.)
+# and nginx forwards them to the backend — so VITE_API_URL can be empty.
+ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
 
-# Build the static React app into /app/dist
 RUN npm run build
 
-# Stage 2: Serve with nginx (tiny production image)
+# ── Stage 2: Serve with nginx + runtime env substitution ─────────────────────
 FROM nginx:alpine
 
+# Install gettext for envsubst (substitutes ${BACKEND_URL} in nginx.conf at startup)
+RUN apk add --no-cache gettext
+
 COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# nginx.conf template — ${BACKEND_URL} is replaced at container startup
+COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 EXPOSE 80
 
-CMD ["nginx", "-g", "daemon off;"]
+# envsubst replaces ${BACKEND_URL} in the nginx template before nginx starts
+# BACKEND_URL should be the internal gateway URL, e.g.:
+#   http://gateway-service.expense-audit-dev.local:8000
+# This is set as an environment variable in the ECS task definition
+CMD ["/bin/sh", "-c", \
+     "envsubst '${BACKEND_URL}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
