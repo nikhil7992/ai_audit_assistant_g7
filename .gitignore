@@ -25,6 +25,8 @@ cdk.out/
 *.d.ts
 .DS_Store
 
+!frontend/src/vite-env.d.ts
+
 # IDE
 .idea/
 .vscode/
