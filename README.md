@@ -340,6 +340,8 @@ aws ssm put-parameter \
   --type SecureString --region us-east-1
 ```
 
+aws opensearch create-domain --domain-name expense-audit-dev --engine-version "OpenSearch_2.13" --cluster-config InstanceType=t3.small.search,InstanceCount=1 --ebs-options EBSEnabled=true,VolumeType=gp3,VolumeSize=10 --encryption-at-rest-options Enabled=true --node-to-node-encryption-options Enabled=true --domain-endpoint-options EnforceHTTPS=true --advanced-security-options 'Enabled=true,InternalUserDatabaseEnabled=true,MasterUserOptions={MasterUserName=admin,MasterUserPassword=""}' --access-policies '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::039567213955:root"},"Action":"es:*","Resource":"arn:aws:es:us-east-1:039567213955:domain/expense-audit-dev/*"}]}' --region us-east-1
+
 ### Application environment variables
 
 All values marked `# PLACEHOLDER` in `app/src/config/settings.py`:
