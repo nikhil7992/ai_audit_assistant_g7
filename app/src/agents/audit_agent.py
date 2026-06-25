@@ -19,13 +19,24 @@ logger = logging.getLogger(__name__)
 
 class AuditAgent:
     def __init__(self) -> None:
-        self._bedrock = BedrockClient(
-            region      = settings.BEDROCK_REGION,
-            llm_model   = settings.BEDROCK_LLM_MODEL,
-            embed_model = settings.BEDROCK_EMBED_MODEL,
-            max_tokens  = settings.BEDROCK_MAX_TOKENS,
-        )
-        self._s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+        # Lazy — Bedrock and S3 clients created on first generate_report() call
+        self._bedrock = None
+        self._s3      = None
+
+    def _get_bedrock(self):
+        if self._bedrock is None:
+            self._bedrock = BedrockClient(
+                region      = settings.BEDROCK_REGION,
+                llm_model   = settings.BEDROCK_LLM_MODEL,
+                embed_model = settings.BEDROCK_EMBED_MODEL,
+                max_tokens  = settings.BEDROCK_MAX_TOKENS,
+            )
+        return self._bedrock
+
+    def _get_s3(self):
+        if self._s3 is None:
+            self._s3 = boto3.client("s3", region_name=settings.AWS_REGION)
+        return self._s3
 
     def generate_report(self, expenses: list[dict], validations: list[dict], dup_result: dict, batch_id: str = "") -> dict:
         batch_id = batch_id or f"BATCH-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -42,7 +53,7 @@ Compliance score: {report['compliance_score']}/100
 Verdict: {report['overall_verdict']}
 
 Return ONLY a JSON object: {{"executive_summary": "<4 sentences>"}}"""
-            raw  = self._bedrock.invoke_llm(summary_prompt)
+            raw  = self._get_bedrock().invoke_llm(summary_prompt)
             raw  = re.sub(r"^```(?:json)?\s*", "", raw.strip())
             raw  = re.sub(r"\s*```$", "", raw)
             data = json.loads(raw)
@@ -82,10 +93,33 @@ Return ONLY a JSON object: {{"executive_summary": "<4 sentences>"}}"""
         confs     = [v.get("confidence_score", 0.8) for v in validations]
         agg_conf  = round(sum(confs) / len(confs), 3) if confs else 0.8
 
-        if score >= 80:   verdict = "APPROVED"
-        elif score >= 60: verdict = "PARTIALLY_APPROVED"
-        elif score >= 40: verdict = "ESCALATED"
-        else:             verdict = "REJECTED"
+        # Hard override rules — score alone cannot determine verdict
+        # when there are absolute policy violations
+        has_critical = any(
+            v.get("compliance_status") == "CRITICAL"
+            for v in validations
+        )
+        has_violation = any(
+            v.get("compliance_status") == "VIOLATION"
+            for v in validations
+        )
+        has_duplicates = len(dup_result.get("duplicate_pairs", [])) > 0
+
+        if has_critical:
+            # Any CRITICAL finding (prohibited expense, fraud) = always REJECTED
+            verdict = "REJECTED"
+        elif has_duplicates:
+            # Duplicate submissions = always ESCALATED for manual review
+            verdict = "ESCALATED"
+        elif has_violation:
+            # Policy violations use score to determine severity
+            if score >= 70: verdict = "PARTIALLY_APPROVED"
+            else:           verdict = "ESCALATED"
+        else:
+            # Clean batch — use score thresholds
+            if score >= 80: verdict = "APPROVED"
+            elif score >= 60: verdict = "PARTIALLY_APPROVED"
+            else:             verdict = "ESCALATED"
 
         findings, fid = [], 1
         for exp, val in zip(expenses, validations):
@@ -122,7 +156,7 @@ Return ONLY a JSON object: {{"executive_summary": "<4 sentences>"}}"""
 
     def _persist(self, report: dict, batch_id: str) -> None:
         try:
-            self._s3.put_object(
+            self._get_s3().put_object(
                 Bucket      = settings.REPORTS_S3_BUCKET,
                 Key         = f"reports/{batch_id}.json",
                 Body        = json.dumps(report, default=str),
