@@ -38,13 +38,12 @@ export default function AuditResult({ report }: Props) {
   const fb = report.financial_breakdown
   const ac = report.approval_chain
 
-  const verdictColorMap: Record<string, string> = {
+const verdictColor = {
     APPROVED:            'var(--green)',
     PARTIALLY_APPROVED:  'var(--amber)',
     ESCALATED:           'var(--coral)',
     REJECTED:            'var(--coral)',
-  }
-  const verdictColor = verdictColorMap[report.overall_verdict] ?? 'var(--text)'
+  }[report.overall_verdict] ?? 'var(--text)'
 
   return (
     <div>
